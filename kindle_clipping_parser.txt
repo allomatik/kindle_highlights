@@ -1,0 +1,53 @@
+import re
+from pathlib import Path
+import pandas as pd
+from collections import defaultdict
+
+def parse_clippings(clippings_path, output_path):
+    # Load raw text
+    with open(clippings_path, "r", encoding="utf-8") as f:
+        raw_text = f.read()
+
+    # Split by separator
+    entries = raw_text.split("==========")
+    parsed_entries = []
+
+    # Regex pattern for entry metadata
+    entry_pattern = re.compile(
+        r"(?P<title>.+?)\s+\((?P<author>.+?)\)\n"
+        r"- Your (?P<type>\w+) on (page (?P<page>\d+)\s+\| )?Location (?P<location>[\d-]+)\s+\| Added on (?P<timestamp>.+?)\n\n"
+        r"(?P<content>.*)",
+        re.DOTALL
+    )
+
+    # Parse entries
+    for entry in entries:
+        entry = entry.strip()
+        match = entry_pattern.search(entry)
+        if match:
+            parsed_entries.append(match.groupdict())
+
+    # Sort entries by title and location
+    df = pd.DataFrame(parsed_entries)
+    df["location_start"] = df["location"].apply(lambda x: int(x.split("-")[0]) if x else 0)
+    df = df.sort_values(by=["title", "location_start"])
+
+    # Create markdown output
+    markdown_output = ""
+    for title, group in df.groupby("title"):
+        markdown_output += f"## {title}\n\n"
+        for _, row in group.iterrows():
+            if row["type"].lower() == "highlight":
+                markdown_output += f"- **Highlight** (Location {row['location']}): {row['content'].strip()}\n"
+            elif row["type"].lower() == "note":
+                markdown_output += f"- _Note_ (Location {row['location']}): {row['content'].strip()}\n"
+        markdown_output += "\n"
+
+    # Save to file
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(markdown_output)
+
+    print(f"Highlights exported to: {output_path}")
+
+# usage example:
+# parse_clippings("My Clippings.txt", "kindle_highlights.md")
